@@ -20,31 +20,27 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.util.Log;
 import android.util.SparseArray;
 import android.widget.Toast;
-
 import com.google.android.gms.vision.Frame;
 import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.FaceDetector;
 
+import timber.log.Timber;
+
 class Emojifier {
 
-    // TODO (3): Change all Log statements to Timber logs and remove the LOG_TAG variable
     private static final String LOG_TAG = Emojifier.class.getSimpleName();
-
     private static final float EMOJI_SCALE_FACTOR = .9f;
-    private static final double SMILING_PROB_THRESHOLD = .15;
-    private static final double EYE_OPEN_PROB_THRESHOLD = .5;
-
     /**
-     * Method for detecting faces in a bitmap, and drawing emoji depending on the facial
-     * expression.
+     * Method for detecting faces in a bitmap.
      *
      * @param context The application context.
      * @param picture The picture in which to detect the faces.
      */
-    static Bitmap detectFacesandOverlayEmoji(Context context, Bitmap picture) {
+    static Bitmap detectFacesAndOverlayEmoji(Context context, Bitmap picture) {
 
         // Create the face detector, disable tracking and enable classifications
         FaceDetector detector = new FaceDetector.Builder(context)
@@ -59,124 +55,142 @@ class Emojifier {
         SparseArray<Face> faces = detector.detect(frame);
 
         // Log the number of faces
-        Log.d(LOG_TAG, "detectFaces: number of faces = " + faces.size());
+//        Log.d(LOG_TAG, "detectFacesAndOverlayEmoji: number of faces = " + faces.size());
 
-        // Initialize result bitmap to original picture
+        Timber.d("detectFaces: number of faces = " + faces.size());
+
         Bitmap resultBitmap = picture;
-
         // If there are no faces detected, show a Toast message
-        if (faces.size() == 0) {
+        if(faces.size() == 0){
             Toast.makeText(context, R.string.no_faces_message, Toast.LENGTH_SHORT).show();
         } else {
-
-            // Iterate through the faces
             for (int i = 0; i < faces.size(); ++i) {
+                Bitmap emojiBitmap = null;
                 Face face = faces.valueAt(i);
-
-                Bitmap emojiBitmap;
-                switch (whichEmoji(face)) {
-                    case SMILE:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.smile);
+                switch (whichEmoji(face)){
+                    case smiling:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.smile);
                         break;
-                    case FROWN:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.frown);
+                    case frowning:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.frown);
                         break;
-                    case LEFT_WINK:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.leftwink);
+                    case left_wink_smile:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.leftwink);
                         break;
-                    case RIGHT_WINK:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.rightwink);
+                    case right_wink_smile:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.rightwink);
                         break;
-                    case LEFT_WINK_FROWN:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.leftwinkfrown);
+                    case close_eye_frowning:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.closed_frown);
                         break;
-                    case RIGHT_WINK_FROWN:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.rightwinkfrown);
+                    case closed_eye_smiling:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.closed_smile);
                         break;
-                    case CLOSED_EYE_SMILE:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.closed_smile);
+                    case left_wink_frowning:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.leftwinkfrown);
                         break;
-                    case CLOSED_EYE_FROWN:
-                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),
-                                R.drawable.closed_frown);
+                    case right_wink_frowning:
+                        emojiBitmap = BitmapFactory.decodeResource(context.getResources(),R.drawable.rightwinkfrown);
                         break;
                     default:
-                        emojiBitmap = null;
-                        Toast.makeText(context, R.string.no_emoji, Toast.LENGTH_SHORT).show();
+                        break;
                 }
 
-                // Add the emojiBitmap to the proper position in the original image
-                resultBitmap = addBitmapToFace(resultBitmap, emojiBitmap, face);
+                if(emojiBitmap != null){
+                    resultBitmap = addBitmapToFace(resultBitmap,emojiBitmap,face);
+                }
             }
         }
 
 
         // Release the detector
         detector.release();
-
         return resultBitmap;
     }
 
 
-    /**
-     * Determines the closest emoji to the expression on the face, based on the
-     * odds that the person is smiling and has each eye open.
-     *
-     * @param face The face for which you pick an emoji.
-     */
+    private static float SMILE_THRESHOLD = 0.1f;
+    private static float EYE_OPEN_THRESHOLD = 0.5f;
 
-    private static Emoji whichEmoji(Face face) {
+    /**
+     * Method for logging the classification probabilities.
+     *
+     * @param face The face to get the classification probabilities.
+     */
+    private static Emoji whichEmoji(Face face){
+        // done (2): Change the name of the getClassifications() method to whichEmoji() (also change the log statements)
         // Log all the probabilities
-        Log.d(LOG_TAG, "whichEmoji: smilingProb = " + face.getIsSmilingProbability());
-        Log.d(LOG_TAG, "whichEmoji: leftEyeOpenProb = "
+        Timber.d("whichEmoji: smilingProb = " + face.getIsSmilingProbability());
+        Timber.d("whichEmoji: leftEyeOpenProb = "
                 + face.getIsLeftEyeOpenProbability());
-        Log.d(LOG_TAG, "whichEmoji: rightEyeOpenProb = "
+        Timber.d("whichEmoji: rightEyeOpenProb = "
                 + face.getIsRightEyeOpenProbability());
 
+        // done (3): Create threshold constants for a person smiling, and and eye being open by taking pictures of yourself and your friends and noting the logs.
+        boolean isSmiling = face.getIsSmilingProbability() > SMILE_THRESHOLD;
+        boolean isLeftEyeOpen = face.getIsLeftEyeOpenProbability() > EYE_OPEN_THRESHOLD;
+        boolean isRightEyeOpen = face.getIsRightEyeOpenProbability() > EYE_OPEN_THRESHOLD;
 
-        boolean smiling = face.getIsSmilingProbability() > SMILING_PROB_THRESHOLD;
-
-        boolean leftEyeClosed = face.getIsLeftEyeOpenProbability() < EYE_OPEN_PROB_THRESHOLD;
-        boolean rightEyeClosed = face.getIsRightEyeOpenProbability() < EYE_OPEN_PROB_THRESHOLD;
-
-
-        // Determine and log the appropriate emoji
+        // done (4): Create 3 boolean variables to track the state of the facial expression based on the thresholds you set in the previous step: smiling, left eye closed, right eye closed.
+        // done (5): Create an if/else system that selects the appropriate emoji based on the above booleans and log the result.
         Emoji emoji;
-        if(smiling) {
-            if (leftEyeClosed && !rightEyeClosed) {
-                emoji = Emoji.LEFT_WINK;
-            }  else if(rightEyeClosed && !leftEyeClosed){
-                emoji = Emoji.RIGHT_WINK;
-            } else if (leftEyeClosed){
-                emoji = Emoji.CLOSED_EYE_SMILE;
-            } else {
-                emoji = Emoji.SMILE;
+        if(isSmiling){
+            if(isLeftEyeOpen){
+                if(isRightEyeOpen){
+                    emoji = Emoji.smiling;
+                }else{
+                    emoji = Emoji.right_wink_smile;
+                }
+            }else{
+                if(isRightEyeOpen){
+                    emoji = Emoji.left_wink_smile;
+                }else{
+                    emoji = Emoji.closed_eye_smiling;
+                }
             }
-        } else {
-            if (leftEyeClosed && !rightEyeClosed) {
-                emoji = Emoji.LEFT_WINK_FROWN;
-            }  else if(rightEyeClosed && !leftEyeClosed){
-                emoji = Emoji.RIGHT_WINK_FROWN;
-            } else if (leftEyeClosed){
-                emoji = Emoji.CLOSED_EYE_FROWN;
-            } else {
-                emoji = Emoji.FROWN;
+        }else{
+            if(isLeftEyeOpen){
+                if(isRightEyeOpen){
+                    emoji = Emoji.frowning;
+                }else{
+                    emoji = Emoji.left_wink_frowning;
+                }
+            }else{
+                if(isRightEyeOpen){
+                    emoji = Emoji.right_wink_frowning;
+                }else{
+                    emoji = Emoji.close_eye_frowning;
+                }
             }
         }
 
-
-        // Log the chosen Emoji
-        Log.d(LOG_TAG, "whichEmoji: " + emoji.name());
+        Log.wtf(LOG_TAG, emoji.name());
 
         return emoji;
     }
+
+    enum Emoji{
+     smiling,
+     frowning,
+     left_wink_smile,
+     right_wink_smile,
+     left_wink_frowning,
+     right_wink_frowning,
+     closed_eye_smiling,
+     close_eye_frowning
+    }
+
+    // done (1): Create an enum class called Emoji that contains all the possible
+    // emoji you can make (
+    // smiling,
+    // frowning,
+    // left wink,
+    // right wink,
+    // left wink frowning,
+    // right wink frowning,
+    // closed eye smiling,
+    // close eye frowning
+    // ).
 
     /**
      * Combines the original picture with the emoji bitmaps
@@ -216,19 +230,6 @@ class Emojifier {
         canvas.drawBitmap(emojiBitmap, emojiPositionX, emojiPositionY, null);
 
         return resultBitmap;
-    }
-    
-
-    // Enum for all possible Emojis
-    private enum Emoji {
-        SMILE,
-        FROWN,
-        LEFT_WINK,
-        RIGHT_WINK,
-        LEFT_WINK_FROWN,
-        RIGHT_WINK_FROWN,
-        CLOSED_EYE_SMILE,
-        CLOSED_EYE_FROWN
     }
 
 }
